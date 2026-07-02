@@ -201,6 +201,58 @@ describe('sendCode parameter passing', () => {
     );
   });
 
+  it('should pass locale through in MFA-style calls (no interactionEvent)', async () => {
+    const ctx = {
+      request: { ip: '127.0.0.1' },
+      query: {},
+      createLog: jest.fn(() => ({ append: jest.fn().mockImplementation(resolveVoid) })),
+      experienceInteraction: mockExperienceInteraction,
+      emailI18n: { locale: 'en' },
+    };
+
+    const libraries = { passcodes: mockPasscodeLibrary } as unknown as Partial<Libraries>;
+    await sendCode({
+      identifier: { type: SignInIdentifier.Email, value: 'test@example.com' },
+      // MFA flows do not pass interactionEvent
+      locale: 'ka-GE',
+      createVerificationRecord: () => mockCodeVerification,
+      libraries: libraries as unknown as Libraries,
+      queries: mockQueries,
+      ctx: ctx as unknown as ExperienceInteractionRouterContext,
+    });
+
+    expect(mockSendVerificationCode).toHaveBeenCalledWith(
+      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ skipDelivery: false })
+    );
+  });
+
+  it('should pass locale through in MFA-style calls with base tag locale', async () => {
+    const ctx = {
+      request: { ip: '127.0.0.1' },
+      query: {},
+      createLog: jest.fn(() => ({ append: jest.fn().mockImplementation(resolveVoid) })),
+      experienceInteraction: mockExperienceInteraction,
+      emailI18n: { locale: 'en' },
+    };
+
+    const libraries = { passcodes: mockPasscodeLibrary } as unknown as Partial<Libraries>;
+    await sendCode({
+      identifier: { type: SignInIdentifier.Phone, value: '+8613123456789' },
+      // MFA flows do not pass interactionEvent
+      locale: 'ka',
+      createVerificationRecord: () => mockCodeVerification,
+      libraries: libraries as unknown as Libraries,
+      queries: mockQueries,
+      ctx: ctx as unknown as ExperienceInteractionRouterContext,
+    });
+
+    expect(mockSendVerificationCode).toHaveBeenCalledWith(
+      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ skipDelivery: false })
+    );
+  });
+
   it('should skip delivery for forgot-password with non-existing email user', async () => {
     const mockQueriesNoUser = {
       users: {

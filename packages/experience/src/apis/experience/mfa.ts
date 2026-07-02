@@ -6,6 +6,7 @@ import {
   type BindMfaPayload,
   type VerifyMfaPayload,
 } from '@logto/schemas';
+import i18next from 'i18next';
 
 import api from '../api';
 
@@ -148,7 +149,7 @@ export const sendMfaVerificationCode = async (
 ) =>
   api
     .post(`${experienceApiRoutes.verification}/mfa-verification-code`, {
-      json: { identifierType },
+      json: { identifierType, locale: i18next.language },
     })
     .json<{ verificationId: string }>();
 

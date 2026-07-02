@@ -125,6 +125,10 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
     koaGuard({
       body: z.object({
         identifierType: z.enum([SignInIdentifier.Email, SignInIdentifier.Phone]),
+        // Optional: explicitly request a locale for the MFA verification-code message.
+        // Region tags are normalized to their base tag (e.g. `ka-GE` -> `ka`);
+        // unsupported tags gracefully fall back.
+        locale: z.string().optional(),
       }),
       response: z.object({
         verificationId: z.string(),
@@ -132,7 +136,7 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
       status: [200, 400, 404, 501],
     }),
     async (ctx, next) => {
-      const { identifierType } = ctx.guard.body;
+      const { identifierType, locale } = ctx.guard.body;
       const { experienceInteraction } = ctx;
 
       const identifier = await getMfaIdentifier({
@@ -142,6 +146,7 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
       });
 
       ctx.body = await sendCode({
+        locale,
         identifier,
         createVerificationRecord: () =>
           createNewMfaCodeVerificationRecord(libraries, queries, identifier),

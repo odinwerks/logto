@@ -113,6 +113,10 @@
                   "identifierType": {
                     "description": "The type of identifier to use for MFA verification. Must be either 'Email' or 'Phone'. The endpoint will automatically use the user's bound identifier of this type.",
                     "enum": ["Email", "Phone"]
+                  },
+                  "locale": {
+                    "description": "Optional locale for the MFA verification-code message. Region tags are normalized to their base tag (e.g. `ka-GE` -> `ka`); unsupported tags gracefully fall back.",
+                    "type": "string"
                   }
                 }
               }
