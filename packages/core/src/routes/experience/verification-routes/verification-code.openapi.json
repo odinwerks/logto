@@ -15,6 +15,10 @@
                   },
                   "interactionEvent": {
                     "description": "The interaction event for which the verification code will be used. Supported values are `SignIn`, `Register`, and `ForgotPassword`. This determines the template for the verification code."
+                  },
+                  "locale": {
+                    "description": "Optional locale for the verification-code message. Region tags are normalized to their base tag (e.g. `ka-GE` -> `ka`); unsupported tags gracefully fall back.",
+                    "type": "string"
                   }
                 }
               }

@@ -37,6 +37,11 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
       body: z.object({
         identifier: verificationCodeIdentifierGuard,
         interactionEvent: z.nativeEnum(InteractionEvent),
+        // Optional: explicitly request a locale for the verification-code message. The experience
+        // UI sends its current language so that anonymous flows (sign-in, forgot-password) can
+        // localize emails even when OIDC `ui_locales` is not set. Region tags are normalized to
+        // their base tag (e.g. `ka-GE` -> `ka`); unsupported tags gracefully fall back.
+        locale: z.string().optional(),
       }),
       response: z.object({
         verificationId: z.string(),
@@ -45,7 +50,7 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
       status: [200, 400, 404, 422, 501],
     }),
     async (ctx, next) => {
-      const { identifier, interactionEvent } = ctx.guard.body;
+      const { identifier, interactionEvent, locale } = ctx.guard.body;
       // Require captcha if the user is not identified.
       if (!ctx.experienceInteraction.identifiedUserId) {
         await ctx.experienceInteraction.guardCaptcha();
@@ -67,6 +72,7 @@ export default function verificationCodeRoutes<T extends ExperienceInteractionRo
       ctx.body = await sendCode({
         identifier,
         interactionEvent,
+        locale,
         createVerificationRecord: () =>
           createNewCodeVerificationRecord(
             libraries,
