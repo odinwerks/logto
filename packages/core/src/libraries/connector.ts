@@ -12,6 +12,7 @@ import {
   ConnectorType,
   TemplateType,
 } from '@logto/connector-kit';
+import { canonicalizeLanguageTag } from '@logto/language-kit';
 import { type Nullable, conditional, pick, trySafe } from '@silverhand/essentials';
 
 import RequestError from '#src/errors/RequestError/index.js';
@@ -109,8 +110,9 @@ export const createConnectorLibrary = (
             },
             dbEntry: databaseConnector,
           };
-        } catch (error: unknown) {
-          console.warn('Failed to load connector:', error instanceof Error ? error.message : error);
+        } catch {
+          // Connector load failures are intentionally ignored here; failed connectors
+          // are filtered out by `logtoConnectors.filter(Boolean)` below.
         }
       })
     );
@@ -185,6 +187,24 @@ export const createConnectorLibrary = (
 
       if (template) {
         return template.details;
+      }
+
+      // If the exact language tag is not available, try the parent language tag
+      // (e.g. 'ka-GE' → 'ka') to match regional variants to base language templates.
+      const canonicalTag = canonicalizeLanguageTag(languageTag);
+      if (canonicalTag) {
+        const [baseTag, ...rest] = canonicalTag.split('-');
+
+        if (baseTag && rest.length > 0) {
+          const parentTemplate = await emailTemplates.findByLanguageTagAndTemplateType(
+            templateType,
+            baseTag
+          );
+
+          if (parentTemplate) {
+            return parentTemplate.details;
+          }
+        }
       }
     }
 
