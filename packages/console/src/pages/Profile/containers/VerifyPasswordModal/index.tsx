@@ -24,7 +24,10 @@ type FormFields = {
 };
 
 function VerifyPasswordModal() {
-  const { t } = useTranslation(undefined, { keyPrefix: 'admin_console' });
+  const {
+    t,
+    i18n: { language },
+  } = useTranslation(undefined, { keyPrefix: 'admin_console' });
   const { navigate } = useTenantPathname();
   const { state } = useLocation();
   const {
@@ -109,7 +112,7 @@ function VerifyPasswordModal() {
           className={styles.link}
           icon={<ArrowConnection />}
           onClick={() => {
-            void api.post('me/verification-codes', { json: { email } });
+            void api.post('me/verification-codes', { json: { email, locale: language } });
             navigate('../verification-code', { state });
           }}
         >

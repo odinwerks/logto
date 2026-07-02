@@ -29,7 +29,10 @@ const getTimeout = () => {
 };
 
 function VerificationCodeModal() {
-  const { t } = useTranslation(undefined, { keyPrefix: 'admin_console' });
+  const {
+    t,
+    i18n: { language },
+  } = useTranslation(undefined, { keyPrefix: 'admin_console' });
   const { navigate } = useTenantPathname();
   const { show: showModal } = useConfirmModal();
   const { state } = useLocation();
@@ -135,7 +138,7 @@ function VerificationCodeModal() {
           onClick={async () => {
             setCode([]);
             setError(undefined);
-            await api.post(`me/verification-codes`, { json: { email } });
+            await api.post(`me/verification-codes`, { json: { email, locale: language } });
             restart(getTimeout(), true);
           }}
         >

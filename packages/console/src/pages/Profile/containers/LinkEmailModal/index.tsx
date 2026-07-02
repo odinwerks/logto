@@ -18,7 +18,10 @@ type EmailForm = {
 };
 
 function LinkEmailModal() {
-  const { t } = useTranslation(undefined, { keyPrefix: 'admin_console' });
+  const {
+    t,
+    i18n: { language },
+  } = useTranslation(undefined, { keyPrefix: 'admin_console' });
   const { navigate } = useTenantPathname();
   const { state } = useLocation();
   const {
@@ -40,7 +43,7 @@ function LinkEmailModal() {
     clearErrors();
     void handleSubmit(
       trySubmitSafe(async ({ email }) => {
-        await api.post(`me/verification-codes`, { json: { email } });
+        await api.post(`me/verification-codes`, { json: { email, locale: language } });
         reset();
         navigate('../verification-code', { state: { email, action: 'changeEmail' } });
       })

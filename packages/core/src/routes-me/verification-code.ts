@@ -28,13 +28,16 @@ export default function verificationCodeRoutes<T extends AuthedMeRouter>(
   router.post(
     '/verification-codes',
     koaGuard({
-      body: object({ email: string().regex(emailRegEx) }),
+      body: object({ email: string().regex(emailRegEx), locale: string().optional() }),
     }),
     async (ctx, next) => {
-      const code = await createPasscode(undefined, codeType, ctx.guard.body);
+      const { locale: bodyLocale, ...payload } = ctx.guard.body;
+      // Normalize region-tagged locale to base language tag (e.g. `ka-GE` → `ka`).
+      const overrideLocale = bodyLocale?.split('-')[0];
+      const code = await createPasscode(undefined, codeType, payload);
       const { uiLocales } = getLogtoCookie(ctx);
       await sendPasscode(code, {
-        locale: ctx.locale,
+        locale: overrideLocale ?? ctx.locale,
         ...(uiLocales && { uiLocales }),
         ip: ctx.request.ip,
       });
