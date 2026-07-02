@@ -5,7 +5,7 @@ import {
 } from '@logto/connector-kit';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
-import { FormProvider, useForm, useWatch } from 'react-hook-form';
+import { FormProvider, useForm, useFormContext, useWatch } from 'react-hook-form';
 import Modal from 'react-modal';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -208,6 +208,7 @@ const renderEditor = ({
         <CommittedVariablesProbe />
         <CommittedUnifiedTranslationsProbe />
         <CommittedTranslationsProbe />
+        <DirtyProbe />
       </FormProvider>
     );
   }
@@ -246,6 +247,7 @@ const renderEditor = ({
     getMode: () => {
       return document.querySelector('[data-testid="committed-mode"]')?.textContent ?? '';
     },
+    getIsDirty: () => document.querySelector('[data-testid="dirty-probe"]')?.textContent === 'true',
   };
 };
 
@@ -283,6 +285,12 @@ function CommittedDeliveriesProbe() {
   const value: unknown = useWatch({ name: 'formConfig.deliveries' });
 
   return <div data-testid="committed-deliveries">{typeof value === 'string' ? value : ''}</div>;
+}
+
+function DirtyProbe() {
+  const { formState } = useFormContext<ConnectorFormType>();
+
+  return <div data-testid="dirty-probe">{formState.isDirty ? 'true' : 'false'}</div>;
 }
 
 describe('<ConnectorTemplatesEditor /> — Unified editor gate', () => {
@@ -363,6 +371,22 @@ describe('<ConnectorTemplatesEditor /> — Unified editor gate', () => {
     });
 
     expect(getUnifiedTemplate()).toBe('{"content":"Existing unified body"}');
+  });
+
+  it('does not dirty the form after seeding unified fields from classic data', () => {
+    jest.useFakeTimers();
+
+    const { getIsDirty } = renderEditor({ connectorFactoryId: 'mailgun-email' });
+
+    // Advance timers past the seeding setTimeout(0) and any debounced write-back.
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // Seeding is a re-derivation from already-persisted classic data, not a user edit.
+    expect(getIsDirty()).toBe(false);
+
+    jest.useRealTimers();
   });
 
   it('persists templateEditorMode as unified for Mailgun for backward compatibility', async () => {

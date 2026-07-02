@@ -156,17 +156,17 @@ function UnifiedEditorModeToggle({
       );
 
       setValue('formConfig.unifiedTemplate', safeJsonStringify(seed.template), {
-        shouldDirty: true,
+        shouldDirty: false,
       });
-      setValue('formConfig.variables', safeJsonStringify(seed.variables), { shouldDirty: true });
+      setValue('formConfig.variables', safeJsonStringify(seed.variables), { shouldDirty: false });
       setValue('formConfig.unifiedTranslations', safeJsonStringify(seed.translations), {
-        shouldDirty: true,
+        shouldDirty: false,
       });
       setValue('formConfig.unifiedSubjects', safeJsonStringify(seed.unifiedSubjects ?? {}), {
-        shouldDirty: true,
+        shouldDirty: false,
       });
       setValue('formConfig.templateEditorMode', safeJsonStringify('unified'), {
-        shouldDirty: true,
+        shouldDirty: false,
       });
     };
 
