@@ -120,6 +120,9 @@ const description = {
   all_account_creation_options: 'همه گزینه‌های ایجاد حساب',
   back_to_sign_in: 'بازگشت به ورود',
   password_expired: 'رمز عبور شما منقضی شده و باید قبل از ورود بازنشانی شود.',
+  password_expiration_reminder:
+    'Your password will expire in {{days}} day(s). We recommend resetting it now.',
+  password_expiration_reminder_skip: 'Skip for now',
   password_expiration_reset: 'بازنشانی رمز عبور',
   support_email: 'ایمیل پشتیبانی: <link></link>',
   support_website: 'وب‌سایت پشتیبانی: <link></link>',
