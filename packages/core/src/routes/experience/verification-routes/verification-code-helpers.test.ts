@@ -123,14 +123,7 @@ describe('sendCode parameter passing', () => {
     );
   });
 
-  it('should resolve body locale and normalize region tags (ka-GE -> ka) when a matching custom language exists', async () => {
-    const mockQueriesWithKa = {
-      ...mockQueries,
-      customPhrases: {
-        findAllCustomLanguageTags: jest.fn().mockResolvedValue(['ka']),
-      },
-    } as unknown as Queries;
-
+  it('should resolve body locale and normalize region tags (ka-GE -> ka) without requiring a configured custom language', async () => {
     const ctx = {
       request: { ip: '127.0.0.1' },
       query: {},
@@ -146,7 +139,33 @@ describe('sendCode parameter passing', () => {
       locale: 'ka-GE',
       createVerificationRecord: () => mockCodeVerification,
       libraries: libraries as unknown as Libraries,
-      queries: mockQueriesWithKa,
+      queries: mockQueries,
+      ctx: ctx as unknown as ExperienceInteractionRouterContext,
+    });
+
+    expect(mockSendVerificationCode).toHaveBeenCalledWith(
+      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ skipDelivery: false })
+    );
+  });
+
+  it('should pass the body locale through as-is when it is already a base tag', async () => {
+    const ctx = {
+      request: { ip: '127.0.0.1' },
+      query: {},
+      createLog: jest.fn(() => ({ append: jest.fn().mockImplementation(resolveVoid) })),
+      experienceInteraction: mockExperienceInteraction,
+      emailI18n: { locale: 'en' },
+    };
+
+    const libraries = { passcodes: mockPasscodeLibrary } as unknown as Partial<Libraries>;
+    await sendCode({
+      identifier: { type: SignInIdentifier.Email, value: 'test@example.com' },
+      interactionEvent: InteractionEvent.SignIn,
+      locale: 'ka',
+      createVerificationRecord: () => mockCodeVerification,
+      libraries: libraries as unknown as Libraries,
+      queries: mockQueries,
       ctx: ctx as unknown as ExperienceInteractionRouterContext,
     });
 
@@ -157,13 +176,6 @@ describe('sendCode parameter passing', () => {
   });
 
   it('should override ctx.emailI18n.locale with the resolved body locale when locale is provided', async () => {
-    const mockQueriesWithKa = {
-      ...mockQueries,
-      customPhrases: {
-        findAllCustomLanguageTags: jest.fn().mockResolvedValue(['ka']),
-      },
-    } as unknown as Queries;
-
     const ctx = {
       request: { ip: '127.0.0.1' },
       query: {},
@@ -179,7 +191,7 @@ describe('sendCode parameter passing', () => {
       locale: 'ka-GE',
       createVerificationRecord: () => mockCodeVerification,
       libraries: libraries as unknown as Libraries,
-      queries: mockQueriesWithKa,
+      queries: mockQueries,
       ctx: ctx as unknown as ExperienceInteractionRouterContext,
     });
 

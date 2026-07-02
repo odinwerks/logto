@@ -12,9 +12,9 @@ import { createRequester } from '#src/utils/test-utils.js';
 
 const { jest } = import.meta;
 
-// Georgian (`ka`) is not a built-in Logto language; treat it as a configured custom language so
-// we can assert that the body `locale` is honored and that region tags normalize to their base.
-const findAllCustomLanguageTags = jest.fn(async () => ['ka']);
+// Georgian (`ka`) is not a built-in Logto language and is not configured as a custom language.
+// The route should still honor the body `locale` and let the connector handle its own fallback.
+const findAllCustomLanguageTags = jest.fn(async () => []);
 const findDefaultSignInExperience = jest.fn(async () => ({
   languageInfo: { autoDetect: false, fallbackLanguage: 'en' },
 }));
@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe('POST /verifications/verification-code locale handling', () => {
-  it('passes the body `locale` through to the connector payload', async () => {
+  it('passes the body `locale` through to the connector payload even when it is not a configured language', async () => {
     const response = await verificationRequest
       .post('/verifications/verification-code')
       .send({ identifier: phoneIdentifier(), locale: 'ka' });
@@ -83,7 +83,7 @@ describe('POST /verifications/verification-code locale handling', () => {
     );
   });
 
-  it('normalizes a region body `locale` to its base tag (ka-GE -> ka)', async () => {
+  it('normalizes a region body `locale` to its base tag (ka-GE -> ka) and bypasses the configured-language filter', async () => {
     const response = await verificationRequest
       .post('/verifications/verification-code')
       .send({ identifier: phoneIdentifier(), locale: 'ka-GE' });
@@ -108,7 +108,7 @@ describe('POST /verifications/verification-code locale handling', () => {
     );
   });
 
-  it('falls back to the fallback language when the body `locale` is unsupported', async () => {
+  it('normalizes an unsupported body `locale` to its base tag and lets the connector handle fallback', async () => {
     const response = await verificationRequest
       .post('/verifications/verification-code')
       .send({ identifier: phoneIdentifier(), locale: 'xyz' });
@@ -116,7 +116,7 @@ describe('POST /verifications/verification-code locale handling', () => {
     expect(response.status).toEqual(201);
     expect(sendPasscode).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ locale: 'en' })
+      expect.objectContaining({ locale: 'xyz' })
     );
   });
 });

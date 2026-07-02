@@ -14,7 +14,6 @@ import { type LogContext } from '#src/middleware/koa-audit-log.js';
 import type Libraries from '#src/tenants/Libraries.js';
 import type Queries from '#src/tenants/Queries.js';
 import { getLogtoCookie } from '#src/utils/cookie.js';
-import { getExperienceLanguage } from '#src/utils/i18n.js';
 
 import type ExperienceInteraction from '../classes/experience-interaction.js';
 import { withSentinel } from '../classes/libraries/sentinel-guard.js';
@@ -136,20 +135,20 @@ export const sendCode = async ({
     !(await hasUserWithIdentifier(queries, identifier));
 
   // Resolve the locale for the verification-code message.
-  // Precedence: explicit `locale` in the request body (normalized via `getExperienceLanguage`
-  // so region tags like `ka-GE` collapse to their base tag — e.g. `ka` when configured as a
-  // custom language — and unsupported tags fall back gracefully) > `ctx.emailI18n.locale`
-  // (resolved by the `koa-email-i18n` middleware from `?lang=`, the `ui_locales` cookie, and
-  // the `Accept-Language` header) > the configured fallback language.
+  // Precedence: explicit `locale` in the request body (normalized to its base tag, e.g.
+  // `ka-GE` -> `ka`) > `ctx.emailI18n.locale` (resolved by the `koa-email-i18n` middleware
+  // from `?lang=`, the `ui_locales` cookie, and the `Accept-Language` header) > the configured
+  // fallback language. The locale is passed straight to the connector so the connector can
+  // apply its own template fallback chain; it is no longer gated by the sign-in-experience
+  // language list.
   // When no body `locale` is provided, `ctx.emailI18n` is spread unchanged (backward compatible).
   const overrideLocale = locale
     ? await (async () => {
-        const [customLanguages, { languageInfo }] = await Promise.all([
-          queries.customPhrases.findAllCustomLanguageTags(),
-          queries.signInExperiences.findDefaultSignInExperience(),
-        ]);
-
-        return getExperienceLanguage({ ctx, languageInfo, customLanguages, lng: locale });
+        // Normalize region tags (e.g. ka-GE -> ka) but do NOT restrict to configured
+        // sign-in-experience languages. The connector handles its own fallback chain.
+        const languageTag = locale.trim();
+        const baseTag = languageTag.split(/[-_]/u)[0];
+        return baseTag ?? languageTag;
       })()
     : undefined;
 
