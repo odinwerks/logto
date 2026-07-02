@@ -105,7 +105,7 @@ function ConnectorTemplatesEditor({
     connectorFactoryId !== undefined && unifiedConnectorFactoryIds.has(connectorFactoryId);
 
   const { t } = useTranslation(undefined, { keyPrefix: 'admin_console' });
-  const { watch, getValues, setValue } = useFormContext<ConnectorFormType>();
+  const { watch, getValues, setValue, register } = useFormContext<ConnectorFormType>();
   const { context, Provider } = useLocalizationEditorContext();
   const {
     selectedLanguage,
@@ -128,6 +128,18 @@ function ConnectorTemplatesEditor({
 
   const templatesRaw = watch(templatesField);
   const translationsRaw = watch(TRANSLATIONS_FIELD);
+
+  // Register the two JSON fields this editor owns with react-hook-form. Neither is rendered as a
+  // standalone input by `ConfigFormFields` (`templates`/`deliveries` is rendered by this editor and
+  // `translations` is skipped entirely), so they would otherwise be unregistered. Registering them
+  // (with no rules, no ref) makes `setValue(..., { shouldDirty: true })` deterministically flip
+  // `formState.isDirty` and track `dirtyFields` — without it, the save footer's dirty state is
+  // unreliable across edits to templates/translations. `register` is stable and the field paths are
+  // memoized, so this runs once per mount.
+  useEffect(() => {
+    register(templatesField);
+    register(TRANSLATIONS_FIELD);
+  }, [register, templatesField]);
 
   // Parse raw JSON into rows. `deliveries` is a `Record<usageType, config>`; normalize it to a row
   // array for rendering and write it back as a record on edit (the `as` shape asserts live inside

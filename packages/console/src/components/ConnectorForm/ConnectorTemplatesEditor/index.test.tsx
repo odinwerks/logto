@@ -6,7 +6,7 @@ import {
 } from '@logto/connector-kit';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
-import { FormProvider, useForm, useWatch } from 'react-hook-form';
+import { FormProvider, useForm, useFormContext, useWatch } from 'react-hook-form';
 import Modal from 'react-modal';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -161,6 +161,14 @@ const getTranslations = (): Record<string, Record<string, string>> => {
 
   return raw.trim().length > 0 ? (JSON.parse(raw) as Record<string, Record<string, string>>) : {};
 };
+
+// Module-scoped DOM helpers used by the save-footer / isDirty tests (they only read `document`).
+const getIsDirtyFromProbe = () =>
+  document.querySelector('[data-testid="dirty-probe"]')?.textContent === 'true';
+const getModalApply = () =>
+  document.querySelector<HTMLButtonElement>('[data-testid="translation-modal-apply"]');
+const getModalGridCells = () =>
+  Array.from(document.querySelectorAll<HTMLTextAreaElement>('table textarea'));
 
 const renderEditor = ({ templates, translations, formItem, connectorType }: RenderOptions = {}) => {
   const defaultValues = buildDefaultValues({ templates, translations });
@@ -572,6 +580,113 @@ describe('<ConnectorTemplatesEditor />', () => {
 
     // Languages exist but the modal is closed → no inline grid.
     expect(getGridCells()).toHaveLength(0);
+  });
+
+  // --- save-footer / isDirty determinism -------------------------------------
+  //
+  // The save footer is driven by `formState.isDirty`. Editing templates or translations in the
+  // classic Ubill SMS editor must reliably flip `isDirty` so the footer appears; loading a saved
+  // connector must not spuriously dirty the form.
+
+  it('flips formState.isDirty after a localization Apply edit (save footer appears)', async () => {
+    const defaultValues = buildDefaultValues({ translations: { en: { code: 'english' } } });
+
+    function DirtyProbe() {
+      // Reading `formState.isDirty` inside a rendered component subscribes this probe to dirty
+      // updates, so it re-renders (and mirrors the value into the DOM) whenever isDirty flips.
+      const { formState } = useFormContext<ConnectorFormType>();
+
+      return <div data-testid="dirty-probe">{formState.isDirty ? 'true' : 'false'}</div>;
+    }
+
+    function Harness() {
+      const methods = useForm<ConnectorFormType>({ defaultValues });
+
+      return (
+        <FormProvider {...methods}>
+          <MemoryRouter>
+            <ConnectorTemplatesEditor formItem={templatesItem} connectorType={ConnectorType.Sms} />
+          </MemoryRouter>
+          <CommittedTranslationsProbe />
+          <DirtyProbe />
+        </FormProvider>
+      );
+    }
+
+    render(<Harness />);
+
+    // Baseline: not dirty on load.
+    await waitFor(() => {
+      expect(getIsDirtyFromProbe()).toBe(false);
+    });
+
+    fireEvent.click(document.querySelectorAll('.languageItem')[0]!);
+
+    await waitFor(() => {
+      expect(getModalApply()).not.toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(getModalGridCells().length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(getModalGridCells()[0]!, { target: { value: 'edited' } });
+
+    fireEvent.click(getModalApply()!);
+
+    await waitFor(() => {
+      expect(getTranslations().en).toEqual({ code: 'edited' });
+    });
+
+    // After Apply, the form must be dirty so the save footer appears.
+    await waitFor(() => {
+      expect(getIsDirtyFromProbe()).toBe(true);
+    });
+  });
+
+  it('flips formState.isDirty after editing a template field (save footer appears)', async () => {
+    const defaultValues = buildDefaultValues();
+
+    function DirtyProbe() {
+      const { formState } = useFormContext<ConnectorFormType>();
+
+      return <div data-testid="dirty-probe">{formState.isDirty ? 'true' : 'false'}</div>;
+    }
+
+    function Harness() {
+      const methods = useForm<ConnectorFormType>({ defaultValues });
+
+      return (
+        <FormProvider {...methods}>
+          <MemoryRouter>
+            <ConnectorTemplatesEditor formItem={templatesItem} connectorType={ConnectorType.Sms} />
+          </MemoryRouter>
+          <DirtyProbe />
+        </FormProvider>
+      );
+    }
+
+    render(<Harness />);
+
+    // Baseline: not dirty on load.
+    await waitFor(() => {
+      expect(getIsDirtyFromProbe()).toBe(false);
+    });
+
+    // The classic SMS editor renders a `Textarea` for each row's `content` field. The mocked
+    // CodeEditor carries `data-testid="json-editor"`; the SMS content `Textarea` does not, so it is
+    // matched by excluding that testid.
+    const contentTextarea = document.querySelector<HTMLTextAreaElement>(
+      'textarea:not([data-testid])'
+    );
+    expect(contentTextarea).not.toBeNull();
+
+    fireEvent.change(contentTextarea!, { target: { value: 'Your edited code is {{code}}.' } });
+
+    // The template-field edit flips isDirty so the save footer appears.
+    await waitFor(() => {
+      expect(getIsDirtyFromProbe()).toBe(true);
+    });
   });
 });
 /* eslint-enable max-lines */

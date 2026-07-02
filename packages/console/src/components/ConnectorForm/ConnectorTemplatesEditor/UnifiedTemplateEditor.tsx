@@ -18,7 +18,7 @@ import {
   type UnifiedTranslations,
   type VariablesTable,
 } from './unified';
-import { safeJsonParse, safeJsonStringify } from './utils';
+import { safeJsonParse, safeJsonStringify, jsonFieldsEqual } from './utils';
 
 type Props = {
   /** The owning connector's type (always `Email` for the allowlisted Mailgun connector). */
@@ -51,18 +51,48 @@ const EMPTY_TRANSLATIONS: UnifiedTranslations = {};
  */
 function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }: Props) {
   const { t } = useTranslation(undefined, { keyPrefix: 'admin_console' });
-  const { setValue, getValues, formState } = useFormContext<ConnectorFormType>();
+  const { setValue, getValues, register, formState } = useFormContext<ConnectorFormType>();
   const { isSubmitting } = formState;
   const [activeTab, setActiveTab] = useState<TabKey>('template');
 
   const kind = kindForConnectorType(connectorType);
 
   const rowsField: FieldPath<ConnectorFormType> = 'formConfig.deliveries';
+  // The unified source fields the editor owns (source of truth) and the two classic mirror fields
+  // it recompiles into. None are rendered as standalone inputs by `ConfigFormFields`, so they are
+  // unregistered by default. Registering them (no rules, no ref) makes `setValue` deterministically
+  // update `formState.isDirty`/`dirtyFields` for user edits to the source fields. The mirror fields
+  // are written with `shouldDirty: false` (they are derived), so registering them only stabilizes
+  // their tracked state.
+  const unifiedTemplateField: FieldPath<ConnectorFormType> = 'formConfig.unifiedTemplate';
+  const variablesField: FieldPath<ConnectorFormType> = 'formConfig.variables';
+  const unifiedTranslationsField: FieldPath<ConnectorFormType> = 'formConfig.unifiedTranslations';
+  const unifiedSubjectsField: FieldPath<ConnectorFormType> = 'formConfig.unifiedSubjects';
+  const translationsField: FieldPath<ConnectorFormType> = 'formConfig.translations';
 
-  const templateRaw: unknown = useWatch({ name: 'formConfig.unifiedTemplate' });
-  const variablesRaw: unknown = useWatch({ name: 'formConfig.variables' });
-  const translationsRaw: unknown = useWatch({ name: 'formConfig.unifiedTranslations' });
-  const subjectsRaw: unknown = useWatch({ name: 'formConfig.unifiedSubjects' });
+  const templateRaw: unknown = useWatch({ name: unifiedTemplateField });
+  const variablesRaw: unknown = useWatch({ name: variablesField });
+  const translationsRaw: unknown = useWatch({ name: unifiedTranslationsField });
+  const subjectsRaw: unknown = useWatch({ name: unifiedSubjectsField });
+
+  // Register the unified source + mirror fields once. `register` is stable and the field paths are
+  // module/instance constants, so this runs once per mount.
+  useEffect(() => {
+    register(unifiedTemplateField);
+    register(variablesField);
+    register(unifiedTranslationsField);
+    register(unifiedSubjectsField);
+    register(rowsField);
+    register(translationsField);
+  }, [
+    register,
+    unifiedTemplateField,
+    variablesField,
+    unifiedTranslationsField,
+    unifiedSubjectsField,
+    rowsField,
+    translationsField,
+  ]);
 
   const template = useMemo<UnifiedTemplate>(
     () => safeJsonParse<UnifiedTemplate>(templateRaw) ?? EMPTY_TEMPLATE,
@@ -134,8 +164,12 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
         const emptyRowsJson = safeJsonStringify(emptyRows);
         const currentRows = getValues(rowsField);
 
-        if (emptyRowsJson !== (typeof currentRows === 'string' ? currentRows : '')) {
-          setValue(rowsField, emptyRowsJson, { shouldDirty: true });
+        // `shouldDirty: false` — the mirror is derived; the form's dirty state is already driven by
+        // the source-field edit (`onTemplateChange` set `unifiedTemplate` with `shouldDirty: true`).
+        // Writing the mirror with `shouldDirty: true` here would spuriously dirty the form whenever a
+        // recompile expands/collapses rows relative to a stale saved mirror (e.g. on load).
+        if (!jsonFieldsEqual(emptyRowsJson, currentRows)) {
+          setValue(rowsField, emptyRowsJson, { shouldDirty: false });
         }
       }
 
@@ -148,17 +182,21 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
     const rowsJson = safeJsonStringify(rowData);
     const translationsJson = safeJsonStringify(compiled.translations);
     const currentRows = getValues(rowsField);
-    const currentTranslations = getValues('formConfig.translations');
+    const currentTranslations = getValues(translationsField);
 
-    // Only write (and dirty the form) when the compiled output differs from the form's current
-    // mirror value — so loading a saved unified connector (whose mirror already matches the
-    // deterministic recompile) does not spuriously dirty the form.
-    if (rowsJson !== (typeof currentRows === 'string' ? currentRows : '')) {
-      setValue(rowsField, rowsJson, { shouldDirty: true });
+    // Write the compiled mirror only when it differs structurally from the form's current mirror
+    // value. Comparison is on parsed structures (not serialized strings) so key order, optional-key
+    // presence, and whitespace do not produce false diffs. `shouldDirty: false` because the mirror
+    // is derived — the form's dirty state is driven by the unified source edits (which use
+    // `shouldDirty: true`). This prevents spurious `isDirty` flips on load when a saved mirror is
+    // stale relative to a deterministic recompile (e.g. the compiler expands a single unified
+    // template into all delivery types while the saved mirror only stored a subset).
+    if (!jsonFieldsEqual(rowsJson, currentRows)) {
+      setValue(rowsField, rowsJson, { shouldDirty: false });
     }
 
-    if (translationsJson !== (typeof currentTranslations === 'string' ? currentTranslations : '')) {
-      setValue('formConfig.translations', translationsJson, { shouldDirty: true });
+    if (!jsonFieldsEqual(translationsJson, currentTranslations)) {
+      setValue(translationsField, translationsJson, { shouldDirty: false });
     }
   }, [
     compiled,
@@ -166,6 +204,7 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
     hasEverEditedUnified,
     parseError,
     rowsField,
+    translationsField,
     setValue,
     getValues,
   ]);
@@ -186,17 +225,19 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
       return;
     }
 
-    // Only queue a debounce when the compiled output differs from the form's current mirror value.
-    // On initial mount / loading, they are identical, so this prevents scheduling a timer on load.
+    // Only queue a debounce when the compiled mirror differs structurally from the form's current
+    // mirror value. On initial mount / loading of a consistent saved connector, they are equal, so
+    // this prevents scheduling a timer on load. Comparison is on parsed structures (not serialized
+    // strings) to avoid byte-order / optional-key false diffs.
     const rowData = compiled.rows.deliveries;
     const rowsJson = safeJsonStringify(rowData);
     const translationsJson = safeJsonStringify(compiled.translations);
     const currentRows = getValues(rowsField);
-    const currentTranslations = getValues('formConfig.translations');
+    const currentTranslations = getValues(translationsField);
 
     if (
-      rowsJson === (typeof currentRows === 'string' ? currentRows : '') &&
-      translationsJson === (typeof currentTranslations === 'string' ? currentTranslations : '')
+      jsonFieldsEqual(rowsJson, currentRows) &&
+      jsonFieldsEqual(translationsJson, currentTranslations)
     ) {
       return;
     }
@@ -223,6 +264,7 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
     writeBack,
     getValues,
     rowsField,
+    translationsField,
   ]);
 
   // Flush on form submit event
@@ -259,24 +301,39 @@ function UnifiedTemplateEditor({ connectorType, connectorFactoryId, formItems }:
     }
   }, [isSubmitting]);
 
-  const onTemplateChange = (next: UnifiedTemplate) => {
-    setValue('formConfig.unifiedTemplate', safeJsonStringify(next), { shouldDirty: true });
-  };
+  // Source-field change handlers. Each writes its unified source field with `shouldDirty: true` —
+  // these are the edits that legitimately flip `formState.isDirty` and show the save footer. The
+  // compiled mirror (`deliveries`/`translations`) is synced separately by `writeBack` with
+  // `shouldDirty: false`. All are memoized with `useCallback` so memoized tab children see
+  // referentially-stable callbacks across keystrokes (only `onTranslationsChange` was previously
+  // memoized; the rest were recreated every render, needlessly re-running downstream effects).
+  const onTemplateChange = useCallback(
+    (next: UnifiedTemplate) => {
+      setValue(unifiedTemplateField, safeJsonStringify(next), { shouldDirty: true });
+    },
+    [setValue, unifiedTemplateField]
+  );
 
-  const onVariablesChange = (next: VariablesTable) => {
-    setValue('formConfig.variables', safeJsonStringify(next), { shouldDirty: true });
-  };
+  const onVariablesChange = useCallback(
+    (next: VariablesTable) => {
+      setValue(variablesField, safeJsonStringify(next), { shouldDirty: true });
+    },
+    [setValue, variablesField]
+  );
 
   const onTranslationsChange = useCallback(
     (next: UnifiedTranslations) => {
-      setValue('formConfig.unifiedTranslations', safeJsonStringify(next), { shouldDirty: true });
+      setValue(unifiedTranslationsField, safeJsonStringify(next), { shouldDirty: true });
     },
-    [setValue]
+    [setValue, unifiedTranslationsField]
   );
 
-  const onUnifiedSubjectsChange = (next: Record<string, string>) => {
-    setValue('formConfig.unifiedSubjects', safeJsonStringify(next), { shouldDirty: true });
-  };
+  const onUnifiedSubjectsChange = useCallback(
+    (next: Record<string, string>) => {
+      setValue(unifiedSubjectsField, safeJsonStringify(next), { shouldDirty: true });
+    },
+    [setValue, unifiedSubjectsField]
+  );
 
   return (
     <div ref={containerRef} className={styles.unifiedHost}>

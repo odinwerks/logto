@@ -1,8 +1,10 @@
+/* eslint-disable max-lines */
 import { TemplateType } from '@logto/connector-kit';
 
 import {
   ensureAllTemplateTypes,
   extractTranslationKeys,
+  jsonFieldsEqual,
   mergeTranslations,
   parseTranslationsJson,
   safeJsonParse,
@@ -511,3 +513,68 @@ describe('mergeTranslations', () => {
     expect(mergeTranslations({ a: '1' }, {})).toEqual({ a: '1' });
   });
 });
+
+describe('jsonFieldsEqual', () => {
+  it('treats two structurally-equal JSON strings as equal regardless of key order', () => {
+    const left = JSON.stringify({ b: '2', a: '1' });
+    const right = JSON.stringify({ a: '1', b: '2' });
+
+    expect(jsonFieldsEqual(left, right)).toBe(true);
+  });
+
+  it('treats two structurally-equal JSON strings as equal regardless of indentation', () => {
+    const compact = JSON.stringify({ Generic: { html: 'hi', subject: 's' } });
+    const pretty = JSON.stringify({ Generic: { html: 'hi', subject: 's' } }, null, 2);
+
+    expect(jsonFieldsEqual(compact, pretty)).toBe(true);
+  });
+
+  it('treats optional-key presence differences as inequality when the extra key has a value', () => {
+    const withSubject = JSON.stringify({ Generic: { html: 'hi', subject: 's' } });
+    const withoutSubject = JSON.stringify({ Generic: { html: 'hi' } });
+
+    expect(jsonFieldsEqual(withSubject, withoutSubject)).toBe(false);
+  });
+
+  it('detects a subset mismatch (expanded delivery types vs a single saved row)', () => {
+    const expanded = JSON.stringify({
+      SignIn: { html: 'hi' },
+      Register: { html: 'hi' },
+      Generic: { html: 'hi' },
+    });
+    const subset = JSON.stringify({ Generic: { html: 'hi' } });
+
+    expect(jsonFieldsEqual(expanded, subset)).toBe(false);
+  });
+
+  it('treats empty/blank/invalid inputs as equal to each other', () => {
+    expect(jsonFieldsEqual('', '')).toBe(true);
+    expect(jsonFieldsEqual('   ', '')).toBe(true);
+    expect(jsonFieldsEqual('{ not json', '{ also not json')).toBe(true);
+  });
+
+  it('treats an empty object as unequal to a non-empty object', () => {
+    expect(jsonFieldsEqual('{}', JSON.stringify({ a: '1' }))).toBe(false);
+  });
+
+  it('compares nested arrays element-wise', () => {
+    expect(
+      jsonFieldsEqual(
+        JSON.stringify([{ usageType: 'SignIn' }]),
+        JSON.stringify([{ usageType: 'SignIn' }])
+      )
+    ).toBe(true);
+    expect(
+      jsonFieldsEqual(
+        JSON.stringify([{ usageType: 'SignIn' }]),
+        JSON.stringify([{ usageType: 'Register' }])
+      )
+    ).toBe(false);
+  });
+
+  it('treats non-string inputs (e.g. null) as blank', () => {
+    expect(jsonFieldsEqual(null, null)).toBe(true);
+    expect(jsonFieldsEqual(null, '{}')).toBe(false);
+  });
+});
+/* eslint-enable max-lines */

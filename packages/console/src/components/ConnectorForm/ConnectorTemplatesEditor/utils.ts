@@ -167,6 +167,59 @@ export const extractTranslationKeys = (
 };
 
 /**
+ * Structural deep equality for two JSON form-field values. Both inputs are JSON strings (the shape
+ * every `formConfig` JSON field is stored as); each is parsed and the resulting values are compared
+ * deeply, so key order, optional-key presence, and whitespace differences do not produce false
+ * inequality. Empty/invalid inputs are normalized to `undefined` so two blank fields compare equal.
+ *
+ * Used by the Unified editor's mirror write-back to decide whether a recompiled `deliveries`/
+ * `translations` mirror differs from the form's current mirror value — comparing parsed structures
+ * instead of serialized strings avoids the byte-order and optional-key mismatches that previously
+ * caused spurious write-backs (and thus spurious `isDirty` flips) on load.
+ */
+const deepEqual = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  // Primitives (including NaN-vs-NaN handled by Object.is above) and mismatched object kinds.
+  if (typeof left !== typeof right) {
+    return false;
+  }
+
+  // Arrays: same length and pairwise deep-equal.
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((item, index) => deepEqual(item, right[index]));
+  }
+
+  // Objects: same own-key set and pairwise deep-equal values. `null` is typeof 'object' but is
+  // handled by Object.is above; plain objects and class instances share key/value structure.
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+
+    return leftKeys.every((key) => Object.hasOwn(right, key) && deepEqual(left[key], right[key]));
+  }
+
+  return false;
+};
+
+export const jsonFieldsEqual = (left: unknown, right: unknown): boolean => {
+  const leftParsed = safeJsonParse(left);
+  const rightParsed = safeJsonParse(right);
+
+  return deepEqual(leftParsed, rightParsed);
+};
+
+/**
  * Best-effort `JSON.parse` that never throws: returns `undefined` for empty/whitespace-only
  * strings, non-strings, or invalid JSON. Delegates to the shared `safeParseJson` helper so error
  * handling stays identical to the rest of the console. The generic carries the caller's asserted

@@ -5,7 +5,7 @@ import {
 } from '@logto/connector-kit';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
-import { FormProvider, useForm, useWatch } from 'react-hook-form';
+import { FormProvider, useForm, useFormContext, useWatch } from 'react-hook-form';
 import Modal from 'react-modal';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -129,6 +129,50 @@ function CommittedDeliveriesProbe() {
   return <div data-testid="committed-deliveries">{typeof value === 'string' ? value : ''}</div>;
 }
 
+/**
+ * Renders `formState.isDirty` into the DOM. Reading `isDirty` inside a rendered component
+ * subscribes the probe to dirty updates, so it re-renders (and mirrors the value) whenever isDirty
+ * flips — letting tests assert the save-footer driver without capturing form methods imperatively.
+ */
+function DirtyProbe() {
+  const { formState } = useFormContext<ConnectorFormType>();
+
+  return <div data-testid="dirty-probe">{formState.isDirty ? 'true' : 'false'}</div>;
+}
+
+/**
+ * Default values for a connector that was saved in Unified mode: the unified source fields are
+ * present AND the compiled `deliveries`/`translations` mirror only stored a subset (just
+ * `Generic`). On load, recompiling the unified source expands to every delivery type, so the
+ * mirror differs structurally from the recompile — a spurious-dirty trap the write-back must not
+ * fall into.
+ */
+const buildSavedUnifiedDefaultValues = (): Record<string, unknown> => {
+  const translations = { en: { code: 'english' } };
+
+  return {
+    syncProfile: SyncProfileMode.OnlyAtRegister,
+    jsonConfig: '{}',
+    formConfig: {
+      // Stale mirror: only `Generic`, even though the unified source compiles to all types.
+      deliveries: JSON.stringify(
+        { Generic: { html: 'Hello {{code}}', subject: 'Subject {{code}}' } },
+        null,
+        2
+      ),
+      templates: JSON.stringify([], null, 2),
+      translations: JSON.stringify(translations, null, 2),
+      templateEditorMode: JSON.stringify('unified'),
+      unifiedTemplate: JSON.stringify({ content: 'Hello {{code}}' }, null, 2),
+      unifiedSubjects: JSON.stringify({ Generic: 'Subject {{code}}' }, null, 2),
+      unifiedTranslations: JSON.stringify(translations, null, 2),
+      variables: JSON.stringify({}, null, 2),
+    },
+    rawConfig: {},
+    enableTokenStorage: false,
+  };
+};
+
 const renderEditor = () => {
   const defaultValues = buildDefaultValues();
 
@@ -233,6 +277,163 @@ describe('<UnifiedTemplateEditor />', () => {
     expect(JSON.parse(getDeliveries())).toEqual({
       Generic: { html: '', subject: 'Logto generic template {{code}}' },
     });
+
+    jest.useRealTimers();
+  });
+
+  // --- save-footer / isDirty determinism -------------------------------------
+  //
+  // The save footer is driven by `formState.isDirty`. The unified editor must NOT spuriously dirty
+  // the form when loading an already-saved connector (the compiled mirror may legitimately differ
+  // from a stale saved `deliveries`, e.g. the compiler expands a single unified template into all
+  // delivery types while the saved mirror only stored a subset). It MUST reliably dirty the form
+  // when the user edits the unified source (template / variables / localizations / subjects).
+
+  /**
+   * Renders the unified editor with a live `formState.isDirty` probe exposed via the returned
+   * `getIsDirty` getter. Mirrors `renderEditor` but adds the {@link DirtyProbe} so tests can assert
+   * the save-footer driver without capturing form methods imperatively across renders.
+   */
+  const renderEditorWithDirtyProbe = (
+    defaultValues: Record<string, unknown>
+  ): {
+    container: HTMLElement;
+    getIsDirty: () => boolean;
+    getTabByText: (text: string) => Element | undefined;
+  } => {
+    function Harness() {
+      const methods = useForm<ConnectorFormType>({ defaultValues });
+
+      return (
+        <FormProvider {...methods}>
+          <MemoryRouter>
+            <form
+              onSubmit={methods.handleSubmit(() => {
+                /* Noop */
+              })}
+            >
+              <ConnectorTemplatesEditor
+                formItem={deliveriesItem}
+                connectorType={ConnectorType.Email}
+                connectorFactoryId="mailgun-email"
+              />
+            </form>
+          </MemoryRouter>
+          <DirtyProbe />
+        </FormProvider>
+      );
+    }
+
+    const { container } = render(<Harness />);
+
+    return {
+      container,
+      getIsDirty: () =>
+        document.querySelector('[data-testid="dirty-probe"]')?.textContent === 'true',
+      getTabByText: (text: string) =>
+        Array.from(document.querySelectorAll('[role="tab"]')).find((tab) =>
+          tab.textContent?.includes(text)
+        ),
+    };
+  };
+
+  it('does not spuriously dirty the form when loading a saved unified connector', async () => {
+    jest.useFakeTimers();
+
+    const { getIsDirty, getTabByText } = renderEditorWithDirtyProbe(
+      buildSavedUnifiedDefaultValues()
+    );
+
+    await waitFor(() => {
+      expect(getTabByText('Template')).not.toBeUndefined();
+    });
+
+    // Allow the seeding effect (setTimeout 0) and any debounced write-back to run.
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // The mirror is recompiled and resynced (shouldDirty: false) without flipping isDirty.
+    expect(getIsDirty()).toBe(false);
+
+    jest.useRealTimers();
+  });
+
+  it('flips isDirty deterministically after editing the unified template content', async () => {
+    jest.useFakeTimers();
+
+    const { getIsDirty, getTabByText, container } = renderEditorWithDirtyProbe(
+      buildSavedUnifiedDefaultValues()
+    );
+
+    await waitFor(() => {
+      expect(getTabByText('Template')).not.toBeUndefined();
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // Baseline: not dirty on load.
+    expect(getIsDirty()).toBe(false);
+
+    const input = container.querySelector('textarea');
+    expect(input).not.toBeNull();
+
+    act(() => {
+      fireEvent.change(input!, { target: { value: 'Hello {{code}} edited' } });
+    });
+
+    // Flush the debounced mirror write-back.
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // The source-field edit (onTemplateChange) flips isDirty; the mirror write-back does not
+    // un-dirty it.
+    expect(getIsDirty()).toBe(true);
+
+    jest.useRealTimers();
+  });
+
+  it('flips isDirty deterministically after editing unified localizations', async () => {
+    jest.useFakeTimers();
+
+    const { getIsDirty, getTabByText, container } = renderEditorWithDirtyProbe(
+      buildSavedUnifiedDefaultValues()
+    );
+
+    await waitFor(() => {
+      expect(getTabByText('Template')).not.toBeUndefined();
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(getIsDirty()).toBe(false);
+
+    // Switch to the Localizations tab and edit the selected language's dictionary.
+    act(() => {
+      fireEvent.click(getTabByText('Localizations')!);
+    });
+
+    // The unified dict editor renders a key/value table; the value cell is the 2nd column and uses
+    // a `TextInput` (`<input>`), not a textarea.
+    const valueCell = container.querySelector<HTMLInputElement>(
+      'table tbody tr td:nth-child(2) input'
+    );
+    expect(valueCell).not.toBeNull();
+
+    act(() => {
+      fireEvent.change(valueCell!, { target: { value: 'english-edited' } });
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(getIsDirty()).toBe(true);
 
     jest.useRealTimers();
   });
