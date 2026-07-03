@@ -101,6 +101,12 @@ export default function verificationRoutes<T extends UserRouter>(
       const { id: userId, clientId: applicationId } = ctx.auth;
       const { identifier, templateType: inputTemplateType, locale: bodyLocale } = ctx.guard.body;
 
+      console.error(
+        '[LOCALE-DIAG] verification/index: body.locale=%s identifier=%j',
+        bodyLocale,
+        identifier
+      );
+
       const user = await queries.users.findUserById(userId);
       const isNewIdentifier =
         (identifier.type === SignInIdentifier.Email && identifier.value !== user.primaryEmail) ||
@@ -140,6 +146,17 @@ export default function verificationRoutes<T extends UserRouter>(
             return baseTag ?? languageTag;
           })()
         : undefined;
+
+      console.error(
+        '[LOCALE-DIAG] verification/index: overrideLocale=%s',
+        overrideLocale
+      );
+
+      const finalLocale = overrideLocale ?? ctx.emailI18n?.locale;
+      console.error(
+        '[LOCALE-DIAG] verification/index: sendVerificationCode locale=%s',
+        finalLocale
+      );
 
       await codeVerification.sendVerificationCode({
         ...ctx.emailI18n,

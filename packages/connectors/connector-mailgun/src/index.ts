@@ -76,15 +76,41 @@ const sendMessage = (
     const config = inputConfig ?? (await getConfig(defaultMetadata.id));
     validateConfig(config, mailgunConfigGuard);
 
+    console.error(
+      '[LOCALE-DIAG] mailgun.sendMessage: payload.locale=%s type=%s to=%s',
+      payload.locale,
+      type,
+      to
+    );
+
     const { endpoint, domain, apiKey, from, deliveries, translations } = config;
 
     const customTemplate = await trySafe(async () => getI18nEmailTemplate?.(type, payload.locale));
+    console.error(
+      '[LOCALE-DIAG] mailgun.sendMessage: customTemplate found=%s keys=%j',
+      Boolean(customTemplate),
+      customTemplate ? Object.keys(customTemplate) : []
+    );
+
     const template = deliveries[type] ?? deliveries[TemplateType.Generic];
+    console.error(
+      '[LOCALE-DIAG] mailgun.sendMessage: deliveries template key=%s',
+      deliveries[type] ? type : deliveries[TemplateType.Generic] ? TemplateType.Generic : 'none'
+    );
+
+    console.error(
+      '[LOCALE-DIAG] mailgun.sendMessage: translations keys=%j',
+      Object.keys(translations ?? {})
+    );
 
     // Resolve the per-locale translation dictionary (`payload.t`) from `config.translations` so
     // that `{{t.key}}` placeholders in `deliveries` (subject/html/text) resolve to the end-user's
     // language. A back-compatible no-op when no translations are configured.
     const localizedPayload = getLocalizedPayload(payload, translations);
+    console.error(
+      '[LOCALE-DIAG] mailgun.sendMessage: localizedPayload.t keys=%j',
+      Object.keys(localizedPayload.t ?? {})
+    );
 
     const data = customTemplate
       ? getDataFromCustomTemplate(customTemplate, localizedPayload)

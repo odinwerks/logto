@@ -103,6 +103,12 @@ export const createPasscodeLibrary = (queries: Queries, connectorLibrary: Connec
 
     const { ip, ...payloadContext } = contextPayload ?? {};
 
+    console.error(
+      '[LOCALE-DIAG] passcode.sendPasscode: contextPayload.locale=%s sendMessagePayload.locale=%s',
+      contextPayload?.locale,
+      payloadContext.locale
+    );
+
     const response = await sendMessage({
       to: emailOrPhone,
       type: templateType,

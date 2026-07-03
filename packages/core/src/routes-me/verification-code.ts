@@ -34,6 +34,12 @@ export default function verificationCodeRoutes<T extends AuthedMeRouter>(
       const { locale: bodyLocale, ...payload } = ctx.guard.body;
       // Normalize region-tagged locale to base language tag (e.g. `ka-GE` → `ka`).
       const overrideLocale = bodyLocale?.split('-')[0];
+      console.error(
+        '[LOCALE-DIAG] me/verification-code: body.locale=%s ctx.locale=%s finalLocale=%s',
+        bodyLocale,
+        ctx.locale,
+        overrideLocale ?? ctx.locale
+      );
       const code = await createPasscode(undefined, codeType, payload);
       const { uiLocales } = getLogtoCookie(ctx);
       await sendPasscode(code, {

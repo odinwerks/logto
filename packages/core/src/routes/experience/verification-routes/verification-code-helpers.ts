@@ -108,6 +108,8 @@ export const sendCode = async ({
 }: SendCodeParams): Promise<{ verificationId: string }> => {
   const { experienceInteraction } = ctx;
 
+  console.error('[LOCALE-DIAG] verification-code-helpers.sendCode: locale=%s', locale);
+
   const log = createVerificationCodeAuditLog(ctx, experienceInteraction, identifier, Action.Create);
 
   log.append({
@@ -152,6 +154,12 @@ export const sendCode = async ({
       })()
     : undefined;
 
+  console.error(
+    '[LOCALE-DIAG] verification-code-helpers.sendCode: overrideLocale=%s ctx.emailI18n.locale=%s',
+    overrideLocale,
+    ctx.emailI18n?.locale
+  );
+
   const payload = skipDelivery
     ? undefined
     : {
@@ -161,6 +169,12 @@ export const sendCode = async ({
         /** The client IP address for rate limiting and fraud detection. */
         ...(ctx.request.ip && { ip: ctx.request.ip }),
       };
+
+  const finalLocale = overrideLocale ?? ctx.emailI18n?.locale;
+  console.error(
+    '[LOCALE-DIAG] verification-code-helpers.sendCode: sendVerificationCode locale=%s',
+    finalLocale
+  );
 
   // Send verification code
   await codeVerification.sendVerificationCode(payload, { skipDelivery });
