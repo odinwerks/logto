@@ -123,7 +123,7 @@ describe('sendCode parameter passing', () => {
     );
   });
 
-  it('should resolve body locale and normalize region tags (ka-GE -> ka) without requiring a configured custom language', async () => {
+  it('should pass the region-tagged body locale through verbatim (ka-GE stays ka-GE) without requiring a configured custom language', async () => {
     const ctx = {
       request: { ip: '127.0.0.1' },
       query: {},
@@ -144,7 +144,7 @@ describe('sendCode parameter passing', () => {
     });
 
     expect(mockSendVerificationCode).toHaveBeenCalledWith(
-      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ locale: 'ka-GE' }),
       expect.objectContaining({ skipDelivery: false })
     );
   });
@@ -175,7 +175,7 @@ describe('sendCode parameter passing', () => {
     );
   });
 
-  it('should override ctx.emailI18n.locale with the resolved body locale when locale is provided', async () => {
+  it('should override ctx.emailI18n.locale with the body locale (passed verbatim) when locale is provided', async () => {
     const ctx = {
       request: { ip: '127.0.0.1' },
       query: {},
@@ -196,12 +196,12 @@ describe('sendCode parameter passing', () => {
     });
 
     expect(mockSendVerificationCode).toHaveBeenCalledWith(
-      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ locale: 'ka-GE' }),
       expect.objectContaining({ skipDelivery: false })
     );
   });
 
-  it('should pass locale through in MFA-style calls (no interactionEvent)', async () => {
+  it('should pass the region-tagged body locale through verbatim in MFA-style calls (no interactionEvent)', async () => {
     const ctx = {
       request: { ip: '127.0.0.1' },
       query: {},
@@ -222,7 +222,7 @@ describe('sendCode parameter passing', () => {
     });
 
     expect(mockSendVerificationCode).toHaveBeenCalledWith(
-      expect.objectContaining({ locale: 'ka' }),
+      expect.objectContaining({ locale: 'ka-GE' }),
       expect.objectContaining({ skipDelivery: false })
     );
   });

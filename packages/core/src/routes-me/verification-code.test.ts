@@ -82,14 +82,14 @@ describe('me verification code routes', () => {
       );
     });
 
-    it('should normalize region-tagged locale to base language tag', async () => {
+    it('should pass region-tagged locale through verbatim', async () => {
       const response = await meRequest.post('/verification-codes').send({ email, locale: 'ka-GE' });
       expect(response.status).toEqual(204);
       // Locale should be stripped from body before createPasscode
       expect(createPasscode).toHaveBeenCalledWith(undefined, codeType, { email });
       expect(sendPasscode).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ locale: 'ka' })
+        expect.objectContaining({ locale: 'ka-GE' })
       );
     });
   });

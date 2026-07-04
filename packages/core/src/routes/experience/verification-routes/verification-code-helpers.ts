@@ -108,8 +108,6 @@ export const sendCode = async ({
 }: SendCodeParams): Promise<{ verificationId: string }> => {
   const { experienceInteraction } = ctx;
 
-  console.error('[LOCALE-DIAG] verification-code-helpers.sendCode: locale=%s', locale);
-
   const log = createVerificationCodeAuditLog(ctx, experienceInteraction, identifier, Action.Create);
 
   log.append({
@@ -137,28 +135,18 @@ export const sendCode = async ({
     !(await hasUserWithIdentifier(queries, identifier));
 
   // Resolve the locale for the verification-code message.
-  // Precedence: explicit `locale` in the request body (normalized to its base tag, e.g.
-  // `ka-GE` -> `ka`) > `ctx.emailI18n.locale` (resolved by the `koa-email-i18n` middleware
-  // from `?lang=`, the `ui_locales` cookie, and the `Accept-Language` header) > the configured
+  // Precedence: explicit `locale` in the request body (passed verbatim, e.g. `ka-GE` stays
+  // as `ka-GE`) > `ctx.emailI18n.locale` (resolved by the `koa-email-i18n` middleware from
+  // `?lang=`, the `ui_locales` cookie, and the `Accept-Language` header) > the configured
   // fallback language. The locale is passed straight to the connector so the connector can
   // apply its own template fallback chain; it is no longer gated by the sign-in-experience
   // language list.
   // When no body `locale` is provided, `ctx.emailI18n` is spread unchanged (backward compatible).
-  const overrideLocale = locale
-    ? await (async () => {
-        // Normalize region tags (e.g. ka-GE -> ka) but do NOT restrict to configured
-        // sign-in-experience languages. The connector handles its own fallback chain.
-        const languageTag = locale.trim();
-        const baseTag = languageTag.split(/[-_]/u)[0];
-        return baseTag ?? languageTag;
-      })()
-    : undefined;
-
-  console.error(
-    '[LOCALE-DIAG] verification-code-helpers.sendCode: overrideLocale=%s ctx.emailI18n.locale=%s',
-    overrideLocale,
-    ctx.emailI18n?.locale
-  );
+  // Pass locale verbatim. The connector handles its own fallback chain
+  // (ka-GE → ka → en → first-available), but cannot expand base tags back
+  // to region tags (ka ↛ ka-GE). Stripping the region would cause English
+  // fallback when translations are stored under region-specific keys.
+  const overrideLocale = locale?.trim();
 
   const payload = skipDelivery
     ? undefined
@@ -169,12 +157,6 @@ export const sendCode = async ({
         /** The client IP address for rate limiting and fraud detection. */
         ...(ctx.request.ip && { ip: ctx.request.ip }),
       };
-
-  const finalLocale = overrideLocale ?? ctx.emailI18n?.locale;
-  console.error(
-    '[LOCALE-DIAG] verification-code-helpers.sendCode: sendVerificationCode locale=%s',
-    finalLocale
-  );
 
   // Send verification code
   await codeVerification.sendVerificationCode(payload, { skipDelivery });

@@ -83,7 +83,7 @@ describe('POST /verifications/verification-code locale handling', () => {
     );
   });
 
-  it('normalizes a region body `locale` to its base tag (ka-GE -> ka) and bypasses the configured-language filter', async () => {
+  it('passes a region body `locale` through verbatim (ka-GE stays ka-GE) and bypasses the configured-language filter', async () => {
     const response = await verificationRequest
       .post('/verifications/verification-code')
       .send({ identifier: phoneIdentifier(), locale: 'ka-GE' });
@@ -91,7 +91,7 @@ describe('POST /verifications/verification-code locale handling', () => {
     expect(response.status).toEqual(201);
     expect(sendPasscode).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ locale: 'ka' })
+      expect.objectContaining({ locale: 'ka-GE' })
     );
   });
 

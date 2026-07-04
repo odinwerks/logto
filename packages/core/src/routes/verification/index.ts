@@ -90,8 +90,8 @@ export default function verificationRoutes<T extends UserRouter>(
           .optional(),
         // Optional: explicitly request a locale for the verification-code message. Authenticated
         // callers (e.g. the admin dashboard) use this to override the locale otherwise derived
-        // from the request context. Region tags are normalized to their base tag (e.g. `ka-GE`
-        // -> `ka`); unsupported tags gracefully fall back to the request-context locale.
+        // from the request context. The body `locale` is passed through verbatim (region tags
+        // preserved, e.g. `ka-GE` stays `ka-GE`). The connector handles its own fallback chain.
         locale: z.string().optional(),
       }),
       response: z.object({ verificationRecordId: z.string(), expiresAt: z.string() }),
@@ -100,12 +100,6 @@ export default function verificationRoutes<T extends UserRouter>(
     async (ctx, next) => {
       const { id: userId, clientId: applicationId } = ctx.auth;
       const { identifier, templateType: inputTemplateType, locale: bodyLocale } = ctx.guard.body;
-
-      console.error(
-        '[LOCALE-DIAG] verification/index: body.locale=%s identifier=%j',
-        bodyLocale,
-        identifier
-      );
 
       const user = await queries.users.findUserById(userId);
       const isNewIdentifier =
@@ -130,33 +124,18 @@ export default function verificationRoutes<T extends UserRouter>(
           : undefined;
 
       // Resolve the locale for the verification-code message.
-      // Precedence: explicit `locale` in the request body (normalized to its base tag, e.g.
-      // `ka-GE` -> `ka`) > `ctx.emailI18n.locale` (resolved by the `koa-email-i18n` middleware
-      // from `?lang=`, the `ui_locales` cookie, and the `Accept-Language` header) > the configured
+      // Precedence: explicit `locale` in the request body (passed verbatim, e.g. `ka-GE` stays
+      // as `ka-GE`) > `ctx.emailI18n.locale` (resolved by the `koa-email-i18n` middleware from
+      // `?lang=`, the `ui_locales` cookie, and the `Accept-Language` header) > the configured
       // fallback language. The locale is passed straight to the connector so the connector can
       // apply its own template fallback chain; it is no longer gated by the sign-in-experience
       // language list.
       // When no body `locale` is provided, `ctx.emailI18n` is spread unchanged (backward compatible).
-      const overrideLocale = bodyLocale
-        ? await (async () => {
-            // Normalize region tags (e.g. ka-GE -> ka) but do NOT restrict to configured
-            // sign-in-experience languages. The connector handles its own fallback chain.
-            const languageTag = bodyLocale.trim();
-            const baseTag = languageTag.split(/[-_]/u)[0];
-            return baseTag ?? languageTag;
-          })()
-        : undefined;
-
-      console.error(
-        '[LOCALE-DIAG] verification/index: overrideLocale=%s',
-        overrideLocale
-      );
-
-      const finalLocale = overrideLocale ?? ctx.emailI18n?.locale;
-      console.error(
-        '[LOCALE-DIAG] verification/index: sendVerificationCode locale=%s',
-        finalLocale
-      );
+      // Pass locale verbatim. The connector handles its own fallback chain
+      // (ka-GE → ka → en → first-available), but cannot expand base tags back
+      // to region tags (ka ↛ ka-GE). Stripping the region would cause English
+      // fallback when translations are stored under region-specific keys.
+      const overrideLocale = bodyLocale?.trim();
 
       await codeVerification.sendVerificationCode({
         ...ctx.emailI18n,

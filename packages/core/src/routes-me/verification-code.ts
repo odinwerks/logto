@@ -32,14 +32,11 @@ export default function verificationCodeRoutes<T extends AuthedMeRouter>(
     }),
     async (ctx, next) => {
       const { locale: bodyLocale, ...payload } = ctx.guard.body;
-      // Normalize region-tagged locale to base language tag (e.g. `ka-GE` → `ka`).
-      const overrideLocale = bodyLocale?.split('-')[0];
-      console.error(
-        '[LOCALE-DIAG] me/verification-code: body.locale=%s ctx.locale=%s finalLocale=%s',
-        bodyLocale,
-        ctx.locale,
-        overrideLocale ?? ctx.locale
-      );
+      // Pass locale verbatim. The connector handles its own fallback chain
+      // (ka-GE → ka → en → first-available), but cannot expand base tags back
+      // to region tags (ka ↛ ka-GE). Stripping the region would cause English
+      // fallback when translations are stored under region-specific keys.
+      const overrideLocale = bodyLocale?.trim();
       const code = await createPasscode(undefined, codeType, payload);
       const { uiLocales } = getLogtoCookie(ctx);
       await sendPasscode(code, {
