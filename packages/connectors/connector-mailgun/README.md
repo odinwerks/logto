@@ -7,6 +7,7 @@ The official Logto connector for Mailgun email service.
 - [Mailgun email connector](#mailgun-email-connector)
   - [Prerequisites](#prerequisites)
   - [Basic configuration](#basic-configuration)
+  - [Localization](#localization)
   - [Deliveries](#deliveries)
     - [Config object](#config-object)
     - [Usage types](#usage-types)
@@ -25,6 +26,63 @@ The official Logto connector for Mailgun email service.
 - Fill out the `domain` field with the domain you have registered in your Mailgun account. This value can be found in the **Domains** section of the Mailgun dashboard. The domain should be in the format `example.com`, without the `https://` or `http://` prefix.
 - Fill out the `apiKey` field with the API key you have generated in your Mailgun account.
 - Fill out the `from` field with the email address you want to send emails from. This email address must be registered in your Mailgun account. The email address should be in the format `Sender Name <sender@example.com>`.
+
+## Localization
+
+The connector supports multi-language emails through two layers.
+
+### Layer 1: DB email templates
+
+Logto can store i18n email templates in the database. When a request includes `payload.locale`, the connector looks up the template by usage type and locale using the following fallback chain:
+
+1. Exact locale match (e.g., `ka-GE`)
+2. Parent language tag (e.g., `ka`)
+3. Fallback language (`en`)
+4. Generic template
+
+### Layer 2: Connector config translations
+
+You can also provide a `translations` dictionary directly in the connector config. Each key is a language tag, and each value is a key-value map of translation strings.
+
+```json
+{
+  "translations": {
+    "en": {
+      "signInTitle": "Sign in",
+      "code": "Your code is {{code}}"
+    },
+    "ka-GE": {
+      "signInTitle": "შესვლა",
+      "code": "თქვენი კოდია {{code}}"
+    }
+  }
+}
+```
+
+In the delivery content, use `{{t.key}}` placeholders to reference the translation strings. The connector resolves them based on the request locale.
+
+```json
+{
+  "SignIn": {
+    "subject": "{{t.signInTitle}}",
+    "html": "<h1>{{t.signInTitle}}</h1><p>{{t.code}}</p>",
+    "text": "{{t.signInTitle}}. {{t.code}}."
+  }
+}
+```
+
+### Locale resolution and region tags
+
+Region tags are preserved verbatim. For example, `ka-GE` stays `ka-GE` and is not normalized to `ka`. The resolution order is:
+
+1. Exact locale (e.g., `ka-GE`)
+2. Parent language tag (e.g., `ka`)
+3. English (`en`)
+4. First available translation
+
+### Plain text support
+
+In addition to `html`, you can provide a `text` plain-text part for each delivery. Mailgun will include it as the text alternative of the email.
 
 ## Deliveries
 
