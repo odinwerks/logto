@@ -99,6 +99,121 @@ Currently the editor is gated to the Mailgun connector only because Mailgun uses
 
 It was built this way because I maintain many per type Mailgun templates and I wanted one place to edit shared structure without copy pasting HTML across nine rows.
 
+For more on how the locale reaches the connector and how the same localization machinery works for SMS connectors, see [Localization and locale passthrough](#localization-and-locale-passthrough). Connector-specific details are in [`packages/connectors/connector-mailgun/README.md`](packages/connectors/connector-mailgun/README.md) and [`packages/connectors/connector-ubill-sms/README.md`](packages/connectors/connector-ubill-sms/README.md).
+
+### Localization and locale passthrough
+
+Logto Blacktop passes the end-user's locale through the entire verification-code stack so connectors can resolve translated content themselves.
+
+#### Overview
+
+1. The client or admin dashboard sends `body.locale` on the verification-code request.
+2. Logto core passes that locale verbatim into the connector's `sendMessage` payload as `payload.locale`.
+3. The connector resolves the best matching template / translation dictionary and renders the message.
+
+Region tags are preserved. `ka-GE` stays `ka-GE`; it is not collapsed to `ka`. The connector is responsible for its own fallback chain, which is `ka-GE → ka → en → first available`. Collapsing `ka-GE` to `ka` would break lookups when translations are stored under region-specific keys.
+
+#### API routes that accept `body.locale`
+
+- `POST /api/verifications/verification-code`
+- `POST /api/experience/verification/verification-code`
+- `POST /api/me/verification-codes`
+
+#### How connectors resolve locale
+
+Connectors use `getLocalizedPayload(payload, config.translations)` from `@logto/connector-kit`. The helper:
+
+- Reads `payload.locale`.
+- Walks the fallback chain `exact locale → parent language tag → en → first available`.
+- Returns a new payload with `payload.t` set to the resolved dictionary, or returns the payload unchanged if no translations are configured.
+
+Template content then references keys with `{{t.key}}` placeholders, resolved by `replaceSendMessageHandlebars`.
+
+#### Simplified: adding localization to an SMS connector
+
+This is the smallest viable localization setup, modeled by `connector-ubill-sms`.
+
+1. Add `translations` to the config guard:
+
+```ts
+translations: z.record(z.record(z.string())).optional(),
+```
+
+2. Import `getLocalizedPayload`, `replaceSendMessageHandlebars`, and `TemplateType` from `@logto/connector-kit`.
+
+3. In `sendMessage`, find the template and resolve localized placeholders:
+
+```ts
+const template =
+  config.templates.find((item) => item.usageType === type) ??
+  config.templates.find((item) => item.usageType === TemplateType.Generic);
+
+const localizedPayload = getLocalizedPayload(payload, config.translations);
+const message = replaceSendMessageHandlebars(
+  template.content,
+  localizedPayload,
+);
+```
+
+4. Add a `Generic` template so an unconfigured usage type has a fallback.
+
+5. Add a `translations` JSON form item in `constant.ts` (optionally gated with `isDevFeature: true`):
+
+```ts
+{
+  key: 'translations',
+  label: 'Translations',
+  type: ConnectorConfigFormItemType.Json,
+  required: false,
+  isDevFeature: true,
+}
+```
+
+Connector-level details are in [`packages/connectors/connector-ubill-sms/README.md`](packages/connectors/connector-ubill-sms/README.md).
+
+#### Full: adding the unified template editor to an email connector
+
+The unified template editor is currently allowlisted to `mailgun-email`. To add it to another email connector:
+
+1. Add the connector factory ID to `unifiedConnectorFactoryIds` in `packages/console/src/components/ConnectorForm/ConnectorTemplatesEditor/unified/types.ts`.
+
+2. Add the runtime and editor-only fields to the connector config guard. `deliveries` and `translations` are consumed at runtime; the `unified*` fields are editor source state and are compiled into `deliveries`/`translations` by the console on save:
+
+```ts
+deliveries: z.record(templateConfigGuard),
+translations: z.record(z.record(z.string())).optional(),
+// Editor source fields (console-only)
+unifiedTemplate: z.record(z.unknown()).optional(),
+variables: z.record(z.unknown()).optional(),
+unifiedTranslations: z.record(z.unknown()).optional(),
+unifiedSubjects: z.record(z.unknown()).optional(),
+templateEditorMode: z.string().optional(),
+```
+
+3. Implement `sendMessage` to use both DB email templates and connector-level translations:
+
+```ts
+const customTemplate = await trySafe(async () =>
+  getI18nEmailTemplate?.(type, payload.locale),
+);
+
+const template = deliveries[type] ?? deliveries[TemplateType.Generic];
+
+const localizedPayload = getLocalizedPayload(payload, translations);
+
+const data = customTemplate
+  ? getDataFromCustomTemplate(customTemplate, localizedPayload)
+  : template && getDataFromDeliveryConfig(template, localizedPayload);
+```
+
+4. Make sure `getDataFromDeliveryConfig` (or equivalent) applies `replaceSendMessageHandlebars` to `subject`, `html`, and optional `text` fields.
+
+5. Add `deliveries` and `translations` JSON form items in `constant.ts`. Mark `translations` with `isDevFeature: true` while the feature is under development. The unified editor source fields do not need their own form items — the `UnifiedTemplateEditor` component registers and manages them directly.
+
+6. If the new connector also wants the unified editor, add its factory ID to the allowlist and make sure `kindForConnectorType` in the console returns the right `ConnectorKind`.
+
+Connector-level details are in [`packages/connectors/connector-mailgun/README.md`](packages/connectors/connector-mailgun/README.md).
+
 ### S3 Storage Overhaul + Account API Avatar Upload
 
 > **Upstream status:** Submitted as [PR #8801](https://github.com/logto-io/logto/pull/8801). Closed. Logto is building a similar feature internally. Rather than maintain two competing designs, I closed this PR and kept the implementation in Blacktop.
