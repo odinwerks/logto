@@ -9,5 +9,6 @@ export * from './interaction.js';
 export * from './logto-config.js';
 export * from './domain.js';
 export * from './custom-profile-fields.js';
+export * from './respondent-verification.js';
 
 export { default as api, authedAdminApi, adminTenantApi } from './api.js';

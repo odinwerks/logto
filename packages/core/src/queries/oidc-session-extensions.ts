@@ -24,6 +24,21 @@ type NullablePick<T, K extends keyof T> = {
 export type SessionInstanceWithExtension = SessionInstance &
   NullablePick<OidcSessionExtension, 'lastSubmission' | 'clientId' | 'accountId' | 'lastActiveAt'>;
 
+type ExactSessionActivity = {
+  sessionExpiresAt: number;
+  lastActiveAt: number;
+};
+
+type ExactSessionActivityResult =
+  | { state: 'found'; evaluatedAt: number; session: ExactSessionActivity }
+  | { state: 'not_found' | 'ambiguous'; evaluatedAt: number };
+
+type ExactSessionActivityRow = {
+  sessionExpiresAt: Nullable<number>;
+  lastActiveAt: Nullable<number>;
+  evaluatedAt: number;
+};
+
 export class OidcSessionExtensionsQueries {
   public readonly insert = buildInsertIntoWithPool(this.pool)(OidcSessionExtensions, {
     onConflict: {
@@ -115,6 +130,74 @@ export class OidcSessionExtensionsQueries {
         and ${modelInstanceFields.payload} ->> 'uid' = ${sessionUid}
         and ${modelInstanceFields.expiresAt} > ${convertToTimestamp()}
     `);
+  }
+
+  async findExactSessionActivity(
+    accountId: string,
+    clientId: string,
+    sid: string
+  ): Promise<ExactSessionActivityResult> {
+    const rows = await this.pool.any<ExactSessionActivityRow>(sql`
+      with evaluation as (
+        select now() as evaluated_at
+      ), matches as (
+        select
+          ${modelInstanceFields.expiresAt} as session_expires_at,
+          ${fields.lastActiveAt} as last_active_at
+        from ${modelInstanceTable}
+        inner join ${table}
+          on ${modelInstanceFields.payload} ->> 'uid' = ${fields.sessionUid}
+          and ${fields.accountId} = ${accountId}
+        cross join evaluation
+        where ${modelInstanceFields.modelName} = ${sessionModelName}
+          and ${modelInstanceFields.payload} ->> 'accountId' = ${accountId}
+          and ${modelInstanceFields.payload} -> 'authorizations' -> ${clientId} ->> 'sid' = ${sid}
+          and ${modelInstanceFields.expiresAt} > evaluation.evaluated_at
+          and ${fields.lastActiveAt} is not null
+        limit 2
+      )
+      select
+        (extract(epoch from matches.session_expires_at) * 1000)::double precision
+          as session_expires_at,
+        (extract(epoch from matches.last_active_at) * 1000)::double precision
+          as last_active_at,
+        (extract(epoch from evaluation.evaluated_at) * 1000)::double precision as evaluated_at
+      from evaluation
+      left join matches on true
+    `);
+    const evaluatedAt = rows[0]?.evaluatedAt;
+
+    if (evaluatedAt === undefined) {
+      throw new Error('Exact session activity query did not return database evaluation time.');
+    }
+
+    const sessions = rows.filter(
+      (row): row is ExactSessionActivityRow & ExactSessionActivity =>
+        row.sessionExpiresAt !== null && row.lastActiveAt !== null
+    );
+
+    if (sessions.length === 0) {
+      return { state: 'not_found', evaluatedAt };
+    }
+
+    if (sessions.length > 1) {
+      return { state: 'ambiguous', evaluatedAt };
+    }
+
+    const [session] = sessions;
+
+    if (!session) {
+      throw new Error('Exact session activity query returned an invalid result.');
+    }
+
+    return {
+      state: 'found',
+      evaluatedAt,
+      session: {
+        sessionExpiresAt: session.sessionExpiresAt,
+        lastActiveAt: session.lastActiveAt,
+      },
+    };
   }
 
   /**

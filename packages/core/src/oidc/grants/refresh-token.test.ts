@@ -88,6 +88,7 @@ const validOidcContext: Partial<KoaContextWithOIDC['oidc']> = {
   client: validClient,
 };
 
+// @ts-expect-error missing Grant fields are not needed for test
 const validGrant: Grant = {
   jti: '',
   kind: '',

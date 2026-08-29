@@ -70,7 +70,8 @@ const createCertificate = (keypair: forge.pki.KeyPair, lifeSpanInYears: number) 
 
   cert.setSubject(subjectAttributes);
   cert.setIssuer(issuerAttributes);
-  cert.sign(keypair.privateKey);
+  // eslint-disable-next-line no-restricted-syntax -- forge type definition mismatch between PrivateKey and rsa.PrivateKey for 4096-bit RSA
+  cert.sign(keypair.privateKey as unknown as forge.pki.rsa.PrivateKey);
 
   return {
     privateKey: forge.pki.privateKeyToPem(keypair.privateKey),

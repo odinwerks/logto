@@ -1,0 +1,24 @@
+{
+  "tags": [
+    {
+      "name": "Respondent verification",
+      "description": "Minimal read-only user and exact-session verification contracts."
+    }
+  ],
+  "paths": {
+    "/api/users/{userId}/status": {
+      "get": {
+        "summary": "Get respondent user status",
+        "description": "Returns only the user ID and whether the account is active or suspended.",
+        "tags": ["Respondent verification"]
+      }
+    },
+    "/api/users/{userId}/session-verifications": {
+      "post": {
+        "summary": "Verify an exact respondent session",
+        "description": "Checks the exact user, client, and SID tuple against session expiry and the raw session heartbeat timestamp.",
+        "tags": ["Respondent verification"]
+      }
+    }
+  }
+}

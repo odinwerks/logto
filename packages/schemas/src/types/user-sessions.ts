@@ -26,6 +26,40 @@ export enum SessionGrantRevokeTarget {
   FirstParty = 'firstParty',
 }
 
+export const respondentSessionVerificationRequestGuard = z
+  .object({
+    clientId: z.string().min(1).max(21),
+    sid: z.string().min(1).max(255),
+    maxInactivitySeconds: z.number().int().min(60).max(120),
+  })
+  .strict();
+
+const respondentSessionVerificationBaseResponseGuard = z.object({
+  contractVersion: z.literal(1),
+  evaluatedAt: z.string().datetime(),
+  maxInactivitySeconds: z.number().int().min(60).max(120),
+});
+
+export const respondentSessionVerificationResponseGuard = z.discriminatedUnion('valid', [
+  respondentSessionVerificationBaseResponseGuard.extend({
+    valid: z.literal(true),
+    sessionExpiresAt: z.string().datetime(),
+    lastActiveAt: z.string().datetime(),
+    inactivitySeconds: z.number().int().nonnegative(),
+  }),
+  respondentSessionVerificationBaseResponseGuard.extend({
+    valid: z.literal(false),
+    reason: z.literal('not_active'),
+  }),
+]);
+
+export type RespondentSessionVerificationRequest = z.infer<
+  typeof respondentSessionVerificationRequestGuard
+>;
+export type RespondentSessionVerificationResponse = z.infer<
+  typeof respondentSessionVerificationResponseGuard
+>;
+
 /**
  * Public session shape for session management APIs.
  *

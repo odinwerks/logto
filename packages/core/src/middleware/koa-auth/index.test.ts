@@ -1,5 +1,5 @@
 import { defaultManagementApi } from '@logto/schemas';
-import { createMockUtils, pickDefault } from '@logto/shared/esm';
+import { createMockUtils } from '@logto/shared/esm';
 import type { Context } from 'koa';
 import type { IRouterParamContext } from 'koa-router';
 import Sinon from 'sinon';
@@ -24,12 +24,16 @@ const { jwtVerify } = mockEsm('jose', () => ({
     payload: {
       sub: 'fooUser',
       scope: defaultManagementApi.scopes.map((scope) => scope.name).join(' '),
+      exp: Math.floor(Date.now() / 1000) + 3600,
     },
   }),
 }));
 
 const audience = defaultManagementApi.resource.indicator;
-const koaAuth = await pickDefault(import('./index.js'));
+const authModule = await import('./index.js');
+const koaAuth = authModule.default;
+const { koaManagementApiAuth } = authModule;
+const defaultScopes = new Set(defaultManagementApi.scopes.map(({ name }) => name));
 
 describe('koaAuth middleware', () => {
   const baseCtx = createContextWithRouteParameters();
@@ -76,7 +80,7 @@ describe('koaAuth middleware', () => {
     });
 
     await koaAuth(mockEnvSet, audience)(ctx, next);
-    expect(ctx.auth).toEqual({ type: 'user', id: 'foo', scopes: new Set(['all']) });
+    expect(ctx.auth).toEqual({ type: 'user', id: 'foo', scopes: defaultScopes });
 
     stub.restore();
   });
@@ -91,7 +95,7 @@ describe('koaAuth middleware', () => {
     };
 
     await koaAuth(mockEnvSet, audience)(mockCtx, next);
-    expect(mockCtx.auth).toEqual({ type: 'user', id: 'foo', scopes: new Set(['all']) });
+    expect(mockCtx.auth).toEqual({ type: 'user', id: 'foo', scopes: defaultScopes });
   });
 
   it('should read DEVELOPMENT_USER_ID from env variable first if is in production and integration test', async () => {
@@ -103,7 +107,7 @@ describe('koaAuth middleware', () => {
     });
 
     await koaAuth(mockEnvSet, audience)(ctx, next);
-    expect(ctx.auth).toEqual({ type: 'user', id: 'foo', scopes: new Set(['all']) });
+    expect(ctx.auth).toEqual({ type: 'user', id: 'foo', scopes: defaultScopes });
 
     stub.restore();
   });
@@ -124,7 +128,7 @@ describe('koaAuth middleware', () => {
     };
 
     await koaAuth(mockEnvSet, audience)(mockCtx, next);
-    expect(mockCtx.auth).toEqual({ type: 'user', id: 'foo', scopes: new Set(['all']) });
+    expect(mockCtx.auth).toEqual({ type: 'user', id: 'foo', scopes: defaultScopes });
 
     stub.restore();
   });
@@ -137,7 +141,30 @@ describe('koaAuth middleware', () => {
       },
     };
     await koaAuth(mockEnvSet, audience)(ctx, next);
-    expect(ctx.auth).toEqual({ type: 'user', id: 'fooUser', scopes: new Set(['all']) });
+    expect(ctx.auth).toEqual({ type: 'user', id: 'fooUser', scopes: defaultScopes });
+  });
+
+  it('authenticates a narrow-scope token without granting legacy route access', async () => {
+    jwtVerify.mockImplementationOnce(() => ({
+      payload: {
+        sub: 'verifier',
+        client_id: 'verifier',
+        scope: 'users:read-status',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+    }));
+    ctx.request = {
+      ...ctx.request,
+      headers: { authorization: 'Bearer access_token' },
+    };
+
+    await koaManagementApiAuth(mockEnvSet, audience)(ctx, next);
+
+    expect(ctx.auth).toEqual({
+      type: 'app',
+      id: 'verifier',
+      scopes: new Set(['users:read-status']),
+    });
   });
 
   it('expect to throw if authorization header is missing', async () => {
@@ -174,7 +201,12 @@ describe('koaAuth middleware', () => {
 
   it('expect to have `client` type per jwt verify result', async () => {
     jwtVerify.mockImplementationOnce(() => ({
-      payload: { sub: 'bar', client_id: 'bar', scope: 'all' },
+      payload: {
+        sub: 'bar',
+        client_id: 'bar',
+        scope: 'all',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
     }));
 
     ctx.request = {
@@ -189,7 +221,9 @@ describe('koaAuth middleware', () => {
   });
 
   it('expect to throw if jwt scope is missing', async () => {
-    jwtVerify.mockImplementationOnce(() => ({ payload: { sub: 'fooUser' } }));
+    jwtVerify.mockImplementationOnce(() => ({
+      payload: { sub: 'fooUser', exp: Math.floor(Date.now() / 1000) + 3600 },
+    }));
 
     ctx.request = {
       ...ctx.request,
@@ -203,7 +237,7 @@ describe('koaAuth middleware', () => {
 
   it('expect to throw if jwt scope does not include management resource scope', async () => {
     jwtVerify.mockImplementationOnce(() => ({
-      payload: { sub: 'fooUser', scope: 'foo' },
+      payload: { sub: 'fooUser', scope: 'foo', exp: Math.floor(Date.now() / 1000) + 3600 },
     }));
 
     ctx.request = {

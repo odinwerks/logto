@@ -18,6 +18,10 @@ import { extractBearerTokenFromHeaders, getAdminTenantTokenValidationSet } from 
 export * from './types.js';
 export * from './constants.js';
 
+const oauthScopeGuard = z
+  .string()
+  .regex(/^(?:[\u0021\u0023-\u005B\u005D-\u007E]+(?: [\u0021\u0023-\u005B\u005D-\u007E]+)*)?$/u);
+
 export const verifyBearerTokenFromRequest = async (
   envSet: EnvSet,
   request: Request,
@@ -57,7 +61,7 @@ export const verifyBearerTokenFromRequest = async (
   try {
     const [keys, issuer] = await getKeysAndIssuer();
     const {
-      payload: { sub, client_id: clientId, scope = '' },
+      payload: { sub, client_id: clientId, scope = '', exp },
     } = await jwtVerify(
       extractBearerTokenFromHeaders(request.headers),
       createLocalJWKSet({ keys }),
@@ -68,8 +72,14 @@ export const verifyBearerTokenFromRequest = async (
     );
 
     assertThat(sub, new RequestError({ code: 'auth.jwt_sub_missing', status: 401 }));
+    assertThat(
+      typeof exp === 'number',
+      new RequestError({ code: 'auth.unauthorized', status: 401 })
+    );
 
-    return { sub, clientId, scopes: z.string().parse(scope).split(' ') };
+    const parsedScope = oauthScopeGuard.parse(scope);
+
+    return { sub, clientId, scopes: parsedScope ? parsedScope.split(' ') : [] };
   } catch (error: unknown) {
     if (error instanceof RequestError) {
       throw error;
@@ -92,7 +102,7 @@ export const verifyBearerTokenFromRequest = async (
 export const isKoaAuthMiddleware = <Type extends IMiddleware>(function_: Type) =>
   function_.name === 'authMiddleware';
 
-export default function koaAuth<StateT, ContextT extends IRouterParamContext, ResponseBodyT>(
+export function koaManagementApiAuth<StateT, ContextT extends IRouterParamContext, ResponseBodyT>(
   envSet: EnvSet,
   audience: string
 ): MiddlewareType<StateT, WithAuthContext<ContextT>, ResponseBodyT> {
@@ -106,11 +116,6 @@ export default function koaAuth<StateT, ContextT extends IRouterParamContext, Re
       audience
     );
 
-    assertThat(
-      scopes.includes(PredefinedScope.All),
-      new RequestError({ code: 'auth.forbidden', status: 403 })
-    );
-
     ctx.auth = {
       type: sub === clientId ? 'app' : 'user',
       id: sub,
@@ -118,6 +123,30 @@ export default function koaAuth<StateT, ContextT extends IRouterParamContext, Re
     };
 
     return next();
+  };
+
+  return authMiddleware;
+}
+
+export default function koaAuth<StateT, ContextT extends IRouterParamContext, ResponseBodyT>(
+  envSet: EnvSet,
+  audience: string
+): MiddlewareType<StateT, WithAuthContext<ContextT>, ResponseBodyT> {
+  const authMiddleware: MiddlewareType<StateT, WithAuthContext<ContextT>, ResponseBodyT> = async (
+    ctx,
+    next
+  ) => {
+    return koaManagementApiAuth<StateT, ContextT, ResponseBodyT>(envSet, audience)(
+      ctx,
+      async () => {
+        assertThat(
+          ctx.auth.scopes.has(PredefinedScope.All),
+          new RequestError({ code: 'auth.forbidden', status: 403 })
+        );
+
+        return next();
+      }
+    );
   };
 
   return authMiddleware;

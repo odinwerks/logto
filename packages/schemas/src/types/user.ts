@@ -80,7 +80,17 @@ export enum AdminTenantRole {
 
 export enum PredefinedScope {
   All = 'all',
+  UsersReadStatus = 'users:read-status',
+  SessionsRead = 'sessions:read',
 }
+
+export const respondentUserStatusResponseGuard = z.object({
+  contractVersion: z.literal(1),
+  id: z.string(),
+  status: z.enum(['active', 'suspended']),
+});
+
+export type RespondentUserStatusResponse = z.infer<typeof respondentUserStatusResponseGuard>;
 
 /**
  * A user that is featured for display. Usually used in a list of resources that are related to

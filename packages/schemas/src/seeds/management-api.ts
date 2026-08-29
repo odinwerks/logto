@@ -33,6 +33,28 @@ export type UpdateAdminData = Omit<AdminData, 'role'> & {
 // Consider remove the dependency of IDs
 const defaultResourceId = 'management-api';
 const defaultScopeAllId = 'management-api-all';
+const defaultScopeUsersReadStatusId = 'management-api-status';
+const defaultScopeSessionsReadId = 'management-api-sess-r';
+
+const granularManagementScopes = Object.freeze([
+  {
+    name: PredefinedScope.UsersReadStatus,
+    description: 'Read whether a user account is active or suspended.',
+  },
+  {
+    name: PredefinedScope.SessionsRead,
+    description: 'Verify an exact user session and its recent activity.',
+  },
+]);
+
+const createGranularManagementScopes = (tenantId: string, resourceId: string) =>
+  granularManagementScopes.map(({ name, description }) => ({
+    tenantId,
+    id: generateStandardId(),
+    name,
+    description,
+    resourceId,
+  }));
 
 // Consider combining this with `createAdminData()`
 /** The fixed Management API Resource for `default` tenant. */
@@ -57,6 +79,20 @@ export const defaultManagementApi = Object.freeze({
       name: PredefinedScope.All,
       description: 'Default scope for Management API, allows all permissions.',
       /** @deprecated You should not rely on this constant. Change to something else. */
+      resourceId: defaultResourceId,
+    },
+    {
+      tenantId: defaultTenantId,
+      id: defaultScopeUsersReadStatusId,
+      name: PredefinedScope.UsersReadStatus,
+      description: 'Read whether a user account is active or suspended.',
+      resourceId: defaultResourceId,
+    },
+    {
+      tenantId: defaultTenantId,
+      id: defaultScopeSessionsReadId,
+      name: PredefinedScope.SessionsRead,
+      description: 'Verify an exact user session and its recent activity.',
       resourceId: defaultResourceId,
     },
   ],
@@ -111,6 +147,7 @@ export const createAdminData = (tenantId: string) => {
         description: 'Default scope for Management API, allows all permissions.',
         resourceId,
       },
+      ...createGranularManagementScopes(tenantId, resourceId),
     ],
     /** @deprecated This role will be removed soon. */
     role: {
@@ -142,6 +179,7 @@ export const createAdminDataInAdminTenant = (tenantId: string) => {
         description: 'Default scope for Management API, allows all permissions.',
         resourceId,
       },
+      ...createGranularManagementScopes(adminTenantId, resourceId),
     ],
     /** The machine-to-machine role for the Management API proxy of the given tenant ID. */
     role: getMapiProxyRole(tenantId),
